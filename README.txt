@@ -13,3 +13,11 @@ Visitor stats (optional)
   <script defer data-domain="mitchelturner.com" src="https://plausible.io/js/script.js"></script>
 
 Flyer: room-to-walk/room-to-walk-flyer.pdf (its QR code points to https://mitchelturner.com/room-to-walk/).
+
+Developer notes
+  index.html opens with an HTML comment: stop keys, the duplicated FAQ, deadlines,
+  pin positions, and the counter meta tag. The script at the bottom has a longer
+  block comment (localStorage keys, the pin editor, fullscreen) plus notes on the
+  slider, map clustering, comment builder, and chart.
+  counter-worker.js documents the KV keys, the once-per-IP-per-plan-per-UTC-day
+  rule, and why the tally is not exact under two simultaneous first counts.

@@ -1,4 +1,28 @@
 <!doctype html>
+<!--
+  Room to Walk — one self-contained page (this file) plus images, and an optional
+  Cloudflare Worker (counter-worker.js). There is no build step for the page.
+
+  DEV NOTES
+  - Stop order is the .loc-tabs buttons, not the order of the .loc-panel blocks.
+    A new stop needs all of: tab id "tab-<key>", panel id "loc-<key>", a
+    PIN_DEFAULTS entry, and a SHORT label. Keys are the tab id minus "tab-".
+  - Letter copy lives in the PLANS object in the script at the bottom, not in
+    the markup. The "pick your asks" checkboxes are filled in at runtime.
+  - FAQ answers are written twice: the visible #faq section and the JSON-LD
+    FAQPage in <head>. Change both or search snippets drift from the page.
+  - Canonical, og:url, twitter tags, and sitemap.xml must share the public URL.
+    The share buttons read the canonical link, so a wrong canonical is what
+    visitors copy.
+  - Deadlines are data-deadline attributes (Alaska time, -08:00 while AKDT is
+    in effect) and also written out in the copy. Update both when a date moves.
+  - Baked-in pin positions are PIN_DEFAULTS. #editpins (or the claude.ai artifact
+    owner) can move them. On the self-hosted copy that stays in one browser until
+    the numbers are pasted back into PIN_DEFAULTS. On claude.ai, Save also
+    publishes them to other signed-in viewers of the artifact.
+  - The public "comments sent" tally stays hidden until <meta name="rtw-counter">
+    has the Worker URL. See the script's block comment and counter-worker.js.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -37,11 +61,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
+/* First paint only. The real stylesheet is the <style> in <body>, so this stays tiny:
+   reserve the safe-area, kill the body margin, and honor [hidden] before the rest arrives. */
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 body { margin: 0; }
 img { max-width: 100%; }
 [hidden] { display: none !important; }
 </style>
+<!-- Keep this FAQPage in sync with the visible #faq section. dateModified is the last content edit. -->
 <script type="application/ld+json">
 {
  "@context": "https://schema.org",
@@ -254,7 +281,8 @@ section > * { min-width: 0; }
 .plan-tabs button small { font-family: var(--f-mono); font-weight: 500; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
 .plan-tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .plan-panel[hidden] { display: none; }
-/* Comment builder */
+/* Comment builder. Markup is the chrome; sentences come from PLANS in the script.
+   Two builders (SEATP, STIP) share the name fields via localStorage key rtw-me. */
 .builder { display: grid; gap: 14px; background: var(--panel); border: 2px solid var(--ink); padding: 14px; margin-inline: calc(var(--gutter) * -1); border-inline: 0; }
 .b-step { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
 .b-step legend, .b-out-head { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 0; margin-bottom: 4px; flex-wrap: wrap; }
@@ -299,7 +327,13 @@ section > * { min-width: 0; }
 .mode button + button { border-left: 2px solid var(--ink); }
 .mode button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 
-/* Before / after slider */
+/* Before / after slider.
+   --pos (0–100%) is the divider. The "after" image is clipped from the left, so
+   dragging right reveals more of the proposal. The range input is visually hidden
+   (pointer-events: none) and exists for the keyboard; the script moves --pos.
+   touch-action: pan-y lets a vertical swipe scroll the page; the script only
+   captures the pointer once the gesture is clearly horizontal.
+   Default aspect-ratio is a fallback; each .compare also sets its own from the drawing. */
 .loc-panel { display: grid; gap: 0; }
 .loc-panel[hidden] { display: none; }
 .loc-panel .loc-note { font-size: .95rem; margin-bottom: 12px; max-width: 70ch; }
@@ -317,7 +351,9 @@ section > * { min-width: 0; }
 .compare-caps strong { color: var(--ink); }
 .hint { font-size: .82rem; color: var(--ink-2); }
 
-/* Side-by-side mode: stacked on phones, two columns on wider screens */
+/* Side-by-side mode: the slider becomes a named grid (tag, image, tag, image).
+   Stacked on phones, two columns from 860px and inside fullscreen. .vision.sbs
+   is toggled by the script and remembered in localStorage as rtw-mode. */
 .vision.sbs .compare { aspect-ratio: auto !important; border: 0; margin-inline: 0; background: transparent; overflow: visible; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "tl" "bi" "tr" "ai"; gap: 6px; touch-action: auto; cursor: auto; }
 .vision.sbs .compare img { position: static; width: 100%; height: auto; border: 2px solid var(--ink); }
 .vision.sbs .compare img:not(.after) { grid-area: bi; margin-bottom: 8px; }
@@ -334,7 +370,11 @@ section > * { min-width: 0; }
 .fs-rotate { display: none; }
 @media (max-width: 419px) { .fsbtn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .fsbtn { padding-inline: 12px; } }
 
-/* Fullscreen viewer: fills the screen (native fullscreen where allowed, a fixed full-window layer otherwise) */
+/* Fullscreen viewer. .viewer.fs is a fixed full-window layer and is what visitors
+   actually see. requestFullscreen is tried on top of it and often refused (iPhone,
+   embedded views); the CSS layer still works. --ar is the drawing's width/height,
+   set by the script, so container-query units can letterbox it on any screen.
+   html.fs-lock stops the page behind from scrolling. */
 .viewer { display: grid; gap: 14px; }
 .viewer.fs { position: fixed; inset: 0; z-index: 100; background: var(--paper); grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; margin: 0;
   padding: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-right, 0px) + 12px) calc(env(safe-area-inset-bottom, 0px) + 8px) calc(env(safe-area-inset-left, 0px) + 12px); }
@@ -365,7 +405,11 @@ html.fs-lock, html.fs-lock body { overflow: hidden; }
   .viewer.fs .fsbtn { min-height: 38px; }
 }
 
-/* Route map */
+/* Route map. The <svg> viewBox (360 110 1360 530) is a crop of the 2000×753
+   drawing; pin coordinates in the script use that same space. --msc is a badge
+   scale the script sets so numbers stay tappable when the map is narrow.
+   Pins, stems, and the legend are drawn by script into #pinLayer — this CSS
+   only styles them. .editing is the drag-to-place mode (#editpins). */
 .route-map { display: grid; gap: 8px; margin-top: 8px; }
 .map-scroll { margin-inline: calc(var(--gutter) * -1); overflow-x: auto; scrollbar-width: thin; }
 .map-scroll svg { min-width: 700px; }
@@ -584,6 +628,7 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 }
 </style>
 
+<!-- Sticky bar. On small screens the section links wrap to their own swipeable row (order: 3). -->
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#top">
@@ -625,6 +670,8 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- Nine before/after stops. Panel order in the markup is not the visitor order;
+       .loc-tabs below is. First panel in the tab list (landing) is the one shown. -->
   <section id="vision" class="vision" aria-labelledby="vision-h">
     <div class="sec-head">
       <p class="eyebrow">Nine places along Route 7</p>
@@ -791,6 +838,7 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
     </div>
     <p class="hint">Drag across the drawing to compare, or switch to side by side.</p>
     <p class="note">These are concept sketches to show the idea, not engineering designs.</p>
+    <!-- Map image is 2000×753; the svg viewBox crops it. #pinLayer is empty until the script draws pins. -->
     <div class="route-map">
       <p class="eyebrow">Where these are · Route 7 from Bar Harbor to downtown Ketchikan</p>
       <p class="map-swipe">Swipe the map sideways to see the whole route.</p>
@@ -833,6 +881,7 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- The seven asks. Cite links (#s1, #s2, …) point at the numbered sources at the bottom. -->
   <section id="asks" aria-labelledby="asks-h">
     <div class="sec-head">
       <p class="eyebrow">What I'm asking DOT&amp;PF to put in the STIP</p>
@@ -852,6 +901,7 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- Facts, the lane-width slider, and the speed/risk chart. Chart paths are drawn by script from Tefft 2011 points. -->
   <section id="evidence" aria-labelledby="ev-h">
     <div class="sec-head">
       <p class="eyebrow">Why narrower lanes and wider walks</p>
@@ -905,6 +955,7 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- Author disclosure sits beside the local-planning levers. The disclosure is personal, not a Commission position. -->
   <section id="local" aria-labelledby="local-h">
     <div class="sec-head">
       <p class="eyebrow">How local planning shapes a state highway</p>
@@ -954,6 +1005,8 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- Two comment builders. .f-asks starts empty; the script prints one checkbox per PLANS[plan].asks entry.
+       data-plan must be "seatp" or "stip" to match the PLANS keys. -->
   <section id="comment" aria-labelledby="c-h">
     <div class="sec-head">
       <p class="eyebrow">Your turn · deadlines October 19 and October 29, 2026</p>
@@ -1053,6 +1106,7 @@ footer { border-top: 2px solid var(--ink); padding-block: 22px 36px; font-size: 
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- {URL} in #postText is replaced at runtime with the canonical href. -->
   <section id="share" aria-labelledby="share-h">
     <div class="sec-head">
       <p class="eyebrow">Spread the word</p>
@@ -1107,6 +1161,7 @@ See before-and-after drawings of nine spots and send a two-minute comment:
 
   <div class="stripe" aria-hidden="true"></div>
 
+  <!-- Visible FAQ. Mirror any wording change into the JSON-LD FAQPage in <head>. -->
   <section id="faq" aria-labelledby="faq-h">
     <div class="sec-head"><p class="eyebrow">Common questions</p><h2 id="faq-h">Route 7 and the STIP, explained</h2></div>
     <div class="faq">
@@ -1154,17 +1209,55 @@ See before-and-after drawings of nine spots and send a two-minute comment:
 </main>
 
 <script>
+/*
+  DEV NOTES — everything interactive is this one IIFE. No modules, no framework.
+
+  What runs, in order:
+    1. Deadline countdowns on [data-deadline].
+    2. Before/after pointer handling (writes the CSS variable --pos).
+    3. Stop tabs, slider vs side-by-side, and the fullscreen layer.
+    4. Route-map pins: layout, legend, and the hidden editor.
+    5. Lane-width calculator and the fatality chart.
+    6. Comment builders (PLANS), share buttons, and the optional counter.
+
+  localStorage keys (every write is try/catch'd; private mode throws):
+    rtw-mode            "slide" | "sbs"
+    rtw-pins            { stopKey: [x, y] | null } merged over PIN_DEFAULTS
+    rtw-me              { name, where } shared by both builders
+    rtw-b-<planId>      { why, asks, edited, letter }
+    rtw-sent-<planId>   true after "I sent it"
+
+  window.__rtwRenderPins is assigned once the pin code exists. selectTab calls
+  it so the map highlight follows the stop. It is the only global this file adds.
+
+  The pin editor stays hidden unless location.hash is "#editpins" or the page
+  is the claude.ai artifact and the viewer is the owner (claude.use('user')).
+  Saving from the artifact also writes config/pins in the artifact database so
+  other signed-in claude.ai viewers see it. The self-hosted copy does not have
+  that database; "Copy locations" is how a change gets pasted into PIN_DEFAULTS.
+
+  Counter: if <meta name="rtw-counter"> is empty, the tally element stays hidden
+  and bump() is a no-op. A filled URL is the Worker; see counter-worker.js for
+  the once-per-IP-per-plan-per-day rule. "I sent it" is still stored locally
+  either way — the public number and the button are separate.
+*/
 (function () {
-  // Countdowns to each plan's deadline (11:59 pm Alaska time)
+  // Countdowns. data-deadline is an ISO timestamp with the Alaska offset
+  // (AKDT is -08:00 in October; DST ends the first Sunday in November).
+  // ceil() so "today" still reads as 1 day left until the timestamp passes.
   document.querySelectorAll('[data-deadline]').forEach(el => {
     const ms = new Date(el.dataset.deadline) - new Date(), days = Math.ceil(ms / 86400000);
     el.innerHTML = ms <= 0 ? 'Closed' : days + '<small>' + (days === 1 ? 'day left' : 'days left') + '</small>';
     if (ms <= 0) el.style.fontSize = '1.4rem';
   });
 
-  // Before / after
-  // Pointer drag on the whole image (touch: horizontal drags only, so vertical swipes still scroll the page).
-  // The hidden range input keeps the slider usable from the keyboard.
+  // Before / after. Writes --pos; the CSS clip-path does the rest.
+  // Mouse: pointerdown jumps the divider and captures, so the drag can't get lost.
+  // Touch: wait until the gesture is clearly horizontal (6px, and dx > dy) before
+  // capturing, so a vertical swipe still scrolls the page. A tap with no move
+  // still jumps the divider on pointerup.
+  // Side-by-side mode has no divider, so pointerdown bails when .vision.sbs is on.
+  // The range input is the keyboard path (arrow keys). Clicking the drawing focuses it.
   document.querySelectorAll('.compare').forEach(c => {
     const r = c.querySelector('input');
     const set = v => { v = Math.max(0, Math.min(100, v)); c.style.setProperty('--pos', v + '%'); r.value = Math.round(v); };
@@ -1181,7 +1274,7 @@ See before-and-after drawings of nine spots and send a two-minute comment:
       if (drag.touch && !drag.moved) {
         const dx = Math.abs(e.clientX - drag.x), dy = Math.abs(e.clientY - drag.y);
         if (dx < 6 && dy < 6) return;
-        if (dy > dx) { drag = null; return; }
+        if (dy > dx) { drag = null; return; } // vertical: let the page scroll
         drag.moved = true; try { c.setPointerCapture(e.pointerId); } catch (_) {}
       }
       fromX(e.clientX);
@@ -1193,13 +1286,19 @@ See before-and-after drawings of nine spots and send a two-minute comment:
   const tabs = Array.from(document.querySelectorAll('.loc-tabs [role=tab]'));
   const vision = document.getElementById('vision');
   const viewer = document.getElementById('viewer');
-  // Each slider knows its drawing's shape so fullscreen can fit it to any screen.
+  // --ar is width/height of the "today" drawing. Fullscreen CSS uses it as
+  // width: min(100cqw, 100cqh * var(--ar)) so a wide drawing letterboxes instead of cropping.
   document.querySelectorAll('.compare').forEach(c => {
     const im = c.querySelector('img'); const w = +im.getAttribute('width'), h = +im.getAttribute('height');
     if (w && h) c.style.setProperty('--ar', (w / h).toFixed(4));
   });
 
-  // Fullscreen: try the browser's real fullscreen; if refused (iPhone, embedded views), the CSS layer still fills the window.
+  // Fullscreen is two layers. .viewer.fs (CSS) always fills the window. Native
+  // requestFullscreen is best-effort and often rejected; the rejection is swallowed
+  // because the CSS layer is already up. nativeFs remembers whether the browser
+  // actually entered fullscreen, so an Esc or a system gesture (which fires
+  // fullscreenchange without going through closeFs) also tears the CSS layer down.
+  // While only the CSS layer is up, Esc is handled here — the browser won't.
   const fsBtn = document.getElementById('fsBtn');
   let nativeFs = false;
   function setFsButton(on) {
@@ -1234,7 +1333,10 @@ See before-and-after drawings of nine spots and send a two-minute comment:
       e.preventDefault(); selectTab(tabs[(cur + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]);
     }
   });
-  let cur = 0;
+  let cur = 0; // index into `tabs`, which is .loc-tabs button order (the visitor's stop order)
+  // scroll=true only from a deliberate jump (legend, pin, thumbnail). Arrow keys
+  // and the prev/next buttons leave the viewer where it is. The map highlight
+  // updates through __rtwRenderPins, which is assigned further down.
   function selectTab(t, scroll) {
     cur = tabs.indexOf(t);
     tabs.forEach(b => {
@@ -1247,22 +1349,35 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     document.getElementById('nowName').textContent = t.querySelector('.tl').lastChild.textContent.trim();
     if (scroll && !viewer.classList.contains('fs')) document.querySelector('.viewer-bar').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  // ---------- Map pins (positions in map units, 2000 x 753) ----------
+  // ---------- Map pins ----------
+  // Coordinates are SVG user units on the 2000×753 map image (same space as the
+  // viewBox "360 110 1360 530"). A null value hides that stop. To change a
+  // published position, replace the numbers here — localStorage and the artifact
+  // database only override them for one viewer or one claude.ai session.
   const PIN_DEFAULTS = {
     landing: [587, 547], refuge: [482, 560], tongass: [1332, 279], schoenbar: [1315, 288], tunnel: [1457, 239],
     dock: [1527, 260], corner: [1287, 308], firstbank: [908, 461], pocketpark: [1270, 318]
   };
   const NS2 = 'http://www.w3.org/2000/svg', layer = document.getElementById('pinLayer'), mapBox = document.querySelector('.route-map'), mapSvg = layer.ownerSVGElement;
+  // Short names are the map tooltip / legend. The long name is the tab label's text node.
   const SHORT = { landing: 'The Landing', refuge: 'Midblock crossing', tongass: 'Tongass Ave', schoenbar: 'Schoenbar Rd', tunnel: 'Water St Tunnel', dock: 'Front & Dock', corner: 'Side-street corner', firstbank: 'First Bank signal', pocketpark: 'Pocket park' };
   const stopInfo = tabs.map((t, i) => { const key = t.id.replace('tab-', ''); return { key, n: i + 1, name: t.querySelector('.tl').lastChild.textContent.trim(), short: SHORT[key] || key, tab: t }; });
   let pins = Object.assign({}, PIN_DEFAULTS), savedPins = null, editing = false;
+  // A saved overlay wins per key, including explicit null (stop removed from the map).
   try { const local = JSON.parse(localStorage.getItem('rtw-pins') || 'null'); if (local) pins = Object.assign({}, PIN_DEFAULTS, local); } catch (e) {}
   function mk(tag, attrs, txt) { const e = document.createElementNS(NS2, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (txt != null) e.textContent = txt; return e; }
   // Close-together stops get their numbered badges fanned out in a row above the cluster,
   // each joined to its real spot by a leader line, so every badge stays readable and tappable.
+  // VB matches the svg viewBox. Badges are clamped inside it so they aren't clipped.
   const VB = { x: 360, y: 110, w: 1360, h: 530 };
   let sc = 1; // grows on small screens so badges stay ~26px across
+  // (VB.w / renderedWidth) converts a CSS pixel into user units. 13/27 targets a
+  // ~26px badge (the 27 user-unit radius at sc=1) from a 13px CSS radius.
+  // --msc scales the place-name labels the same way, capped so they don't dominate.
   function measure() { const w = mapSvg.getBoundingClientRect().width || 1000; sc = Math.max(1, (VB.w / w) * 13 / 27); mapSvg.style.setProperty('--msc', Math.min(sc, 1.8)); }
+  // Greedy cluster: a point joins every group that has a member within 110*sc,
+  // and those groups merge. Singletons sit just above their spot; clusters share
+  // one row, sorted left to right, centered on the group.
   function layoutPins() {
     const pts = stopInfo.filter(st => pins[st.key]).map(st => ({ st, x: pins[st.key][0], y: pins[st.key][1] }));
     const groups = [];
@@ -1282,6 +1397,8 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     });
     return out;
   }
+  // While editing, the badge sits on the real coordinate (bx, by = x, y) so it can
+  // be dragged. In reading mode the badge is the fanned-out layout position.
   function renderPins() {
     measure(); layer.replaceChildren();
     const placed = editing ? stopInfo.filter(st => pins[st.key]).map(st => ({ st, x: pins[st.key][0], y: pins[st.key][1], bx: pins[st.key][0], by: pins[st.key][1] })) : layoutPins();
@@ -1295,6 +1412,8 @@ See before-and-after drawings of nine spots and send a two-minute comment:
       if (editing) a.append(mk('text', { x: bx, y: by + 62 * sc, class: 'pin-l', 'text-anchor': 'middle', style: 'font-size:' + (25 * sc) + 'px' }, st.short));
       badges.append(a); if (on) onItem = { st, bx, by };
     });
+    // The map scrolls sideways on a phone. Recenter only when the active badge is
+    // well outside the viewport (35% of the width) and the user isn't mid-drag.
     if (onItem) { const sc2 = mapSvg.parentElement; if (sc2.scrollWidth > sc2.clientWidth + 4) { const px = (onItem.bx - VB.x) / VB.w * mapSvg.getBoundingClientRect().width; const target = Math.max(0, px - sc2.clientWidth / 2); if (Math.abs(sc2.scrollLeft - target) > sc2.clientWidth * 0.35 && !drag) sc2.scrollLeft = target; } }
     if (onItem && !editing) {
       const { st, bx, by } = onItem, w = (st.short.length * 15 + 36) * sc, lx = Math.max(VB.x + w / 2 + 6, Math.min(VB.x + VB.w - 6 - w / 2, bx)), ly = Math.max(VB.y + 46 * sc, by - 36 * sc);
@@ -1316,13 +1435,17 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     document.getElementById('mapNote').before(lg);
   }
   window.__rtwRenderPins = () => renderPins();
+  // Re-layout when the map's pixel width changes (sc depends on it). Ignore
+  // sub-pixel jitter so a scrollbar appearing doesn't loop the render.
   if ('ResizeObserver' in window) { let lastW = 0; new ResizeObserver(() => { const w = Math.round(mapSvg.getBoundingClientRect().width); if (w && w !== lastW) { lastW = w; renderPins(); } }).observe(mapSvg); }
   layer.addEventListener('click', e => {
     const a = e.target.closest('.pin'); if (!a) return; e.preventDefault();
     if (editing) return;
     selectTab(document.getElementById(a.dataset.tab), true);
   });
-  // drag
+  // Drag is editor-only. toMap converts a screen point through the svg's current
+  // screen CTM, so it stays correct while the map is scrolled or scaled, then
+  // clamps to the viewBox with a 10-unit margin.
   function toMap(ev) { const pt = mapSvg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const p = pt.matrixTransform(mapSvg.getScreenCTM().inverse()); return [Math.round(Math.max(VB.x + 10, Math.min(VB.x + VB.w - 10, p.x))), Math.round(Math.max(VB.y + 10, Math.min(VB.y + VB.h - 10, p.y)))]; }
   let drag = null;
   layer.addEventListener('pointerdown', e => {
@@ -1338,6 +1461,8 @@ See before-and-after drawings of nine spots and send a two-minute comment:
   const endDrag = () => { if (drag) { drag = null; renderPins(); try { localStorage.setItem('rtw-pins', JSON.stringify(pins)); } catch (e) {} document.getElementById('peStatus').textContent = 'Moved. Save when you are done.'; } };
   layer.addEventListener('dragstart', e => e.preventDefault());
   layer.addEventListener('pointerup', endDrag); layer.addEventListener('pointercancel', endDrag);
+  // Tray chips add a missing stop at a fixed midpoint, or clear one (null).
+  // null must be stored, not deleted, so it still overrides PIN_DEFAULTS on reload.
   function renderTray() {
     const tray = document.getElementById('peTray'); if (!tray) return; tray.replaceChildren();
     stopInfo.forEach(st => {
@@ -1349,7 +1474,8 @@ See before-and-after drawings of nine spots and send a two-minute comment:
       tray.append(b);
     });
   }
-  // editor controls
+  // Editor controls. peReset drops the local overlay and returns to PIN_DEFAULTS
+  // plus whatever the artifact database last published (savedPins).
   const peStatus = document.getElementById('peStatus');
   function setEditing(on) {
     editing = on; mapBox.classList.toggle('editing', on);
@@ -1367,7 +1493,10 @@ See before-and-after drawings of nine spots and send a two-minute comment:
       catch (e) { peStatus.textContent = 'Could not save to the page (' + (e && e.code || 'error') + '). Use Copy locations and paste them to Claude instead.'; }
     } else peStatus.textContent = 'Saved in this browser only. Use Copy locations and paste them to Claude to make them permanent.';
   });
-  // who can edit: the artifact owner on claude.ai, or anyone who opens the page with #editpins
+  // Who can edit: the artifact owner on claude.ai, or anyone who opens #editpins.
+  // claude.use is absent on the self-hosted copy; the catch leaves the button hidden.
+  // The snapshot listener applies remote pins only when the visitor isn't dragging
+  // or already editing, so a live update can't yank a pin out from under them.
   (async () => {
     if (window.claude && claude.use) {
       try {
@@ -1388,6 +1517,7 @@ See before-and-after drawings of nine spots and send a two-minute comment:
   renderPins();
   document.getElementById('prevLoc').addEventListener('click', () => selectTab(tabs[(cur + tabs.length - 1) % tabs.length]));
   document.getElementById('nextLoc').addEventListener('click', () => selectTab(tabs[(cur + 1) % tabs.length]));
+  // Slider vs side by side. Remembered so a return visit keeps the choice.
   const mSlide = document.getElementById('modeSlide'), mSbs = document.getElementById('modeSbs');
   function setMode(sbs) {
     vision.classList.toggle('sbs', sbs);
@@ -1406,7 +1536,10 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     });
   });
 
-  // Lane width tool
+  // Lane width tool. 2.9 mph per foot is the NACTO-cited estimate, measured
+  // against a 10 ft lane (so 10 ft reads ±0). Crossing distance is two lanes;
+  // seconds use the MUTCD pedestrian speed of 3.5 ft/s. The bars beside it are
+  // static illustrations, not driven by the slider.
   const lw = document.getElementById('lw');
   function lane() {
     const w = parseFloat(lw.value);
@@ -1423,8 +1556,12 @@ See before-and-after drawings of nine spots and send a two-minute comment:
   }
   lw.addEventListener('input', lane); lane();
 
-  // Chart
-  // Drawn at the pixel width it actually has, so text stays ~12px on a phone instead of shrinking.
+  // Chart. Drawn at the pixel width it actually has, so text stays ~12px on a
+  // phone instead of shrinking with the viewBox. Redraws are skipped when the
+  // rounded width hasn't changed.
+  // Points are [impact mph, risk percent] from Tefft 2011 (AAA), the same figures
+  // named in the svg's aria-label. Ink = severe injury or death; signal = death.
+  // The yellow band (20–40 mph) is the "typical downtown speeds" callout.
   const svg = document.getElementById('chart'), NS = 'http://www.w3.org/2000/svg';
   const series = [
     { c: '#131a1f', pts: [[16, 10], [23, 25], [31, 50], [39, 75], [46, 90]] },
@@ -1463,7 +1600,9 @@ See before-and-after drawings of nine spots and send a two-minute comment:
   drawChart();
   if ('ResizeObserver' in window) new ResizeObserver(drawChart).observe(svg.parentElement); else window.addEventListener('resize', drawChart);
 
-  // Copy helpers
+  // Clipboard, with a selection fallback for browsers that refuse the async API
+  // (non-secure context, or a denied permission). fallbackEl is a textarea when
+  // we have one, otherwise any element whose text we can select.
   async function copy(text, fallbackEl, msg, status) {
     try { await navigator.clipboard.writeText(text); status.textContent = msg; }
     catch (e) {
@@ -1473,6 +1612,11 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     }
   }
   // ---------- Comment builder ----------
+  // Each ask is [key, checkbox label, sentence that goes in the letter].
+  // Keys are stable localStorage ids — renaming one forgets that visitor's check.
+  // Adding an ask here is enough; the fieldset is filled from this list.
+  // mailto: links are rebuilt on every keystroke. Very long letters can exceed
+  // what some mail apps accept in a URL; "Copy comment" is the fallback the UI offers.
   const PLANS = {
     seatp: {
       email: 'SEATP@dowl.com',
@@ -1510,7 +1654,7 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
-  const shared = store.get('rtw-me') || { name: '', where: '' };
+  const shared = store.get('rtw-me') || { name: '', where: '' }; // name + neighborhood, both builders
   const builders = [];
   document.querySelectorAll('.builder').forEach(el => {
     const id = el.dataset.plan, plan = PLANS[id], panel = el.closest('.plan-panel');
@@ -1519,6 +1663,9 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     const name = f('.f-name'), where = f('.f-where'), why = f('.f-why'), letter = f('.f-letter'), mail = f('.f-mail'), st = panel.querySelector('.status'), rebuild = f('.f-rebuild'), sent = f('.f-sent');
     f('.f-asks').innerHTML = plan.asks.map(([k, label]) => `<label class="ask"><input type="checkbox" value="${k}"${(saved.asks ? saved.asks.includes(k) : true) ? ' checked' : ''}><span>${label}</span></label>`).join('');
     name.value = shared.name; where.value = shared.where; why.value = saved.why || '';
+    // Once the visitor types in the letter, stop overwriting it from the fields.
+    // "Undo my edits and rebuild" clears the flag. The letter is only persisted
+    // while edited is true; otherwise it is recomposed, so PLANS copy stays current.
     let edited = !!saved.edited;
     function compose() {
       const picked = [...el.querySelectorAll('.f-asks input:checked')].map(i => i.value);
@@ -1535,6 +1682,8 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     }
     if (saved.edited && saved.letter) letter.value = saved.letter; else letter.value = compose();
     [why, ...el.querySelectorAll('.f-asks input')].forEach(i => i.addEventListener('input', () => refresh(true)));
+    // Name and neighborhood are one pair of facts. Push them into the other builder.
+    // Setting .value does not fire "input", and this builder is skipped so it isn't refreshed twice.
     [name, where].forEach(i => i.addEventListener('input', () => {
       shared.name = name.value; shared.where = where.value; store.set('rtw-me', shared);
       builders.forEach(b => b !== api && b.sync()); refresh(true);
@@ -1544,6 +1693,9 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     mail.addEventListener('click', () => { st.textContent = 'Your email app should open with the comment filled in. If it does not, use Copy comment and paste it into an email to ' + plan.email + '.'; });
     f('.f-copy').addEventListener('click', () => copy(letter.value, letter, 'Comment copied. Paste it into an email to ' + plan.email + ' with the subject: ' + plan.subject, st));
     panel.querySelector('.copy-addr').addEventListener('click', () => copy(plan.email, panel.querySelector('.addr'), 'Email address copied.', st));
+    // "I sent it" is a local toggle, not proof the email went out. Turning it on
+    // also asks the counter to increment; turning it off does not decrement,
+    // because the Worker has no matching undo and the tally is a public count.
     const sentKey = 'rtw-sent-' + id;
     function showSent(on) { sent.setAttribute('aria-pressed', on); sent.textContent = on ? 'Sent ✓' : 'I sent it'; }
     showSent(!!store.get(sentKey));
@@ -1567,7 +1719,10 @@ See before-and-after drawings of nine spots and send a two-minute comment:
   if (navigator.share && canon) { nat.hidden = false; nat.addEventListener('click', () => navigator.share({ title: 'Room to Walk', text: 'Comment on two Alaska transportation plans for safer walking on Route 7 in downtown Ketchikan.', url: pageUrl }).catch(() => {})); }
 
   // ---------- Shared "comments sent" counter ----------
-  // Works when the self-hosted copy sets <meta name="rtw-counter" content="https://…">; otherwise it stays hidden.
+  // Stays hidden until the meta URL is set AND the Worker reports a count above 0,
+  // so a fresh deploy doesn't flash "0 comments". Failures are ignored: the
+  // comment form still works with no Worker. The "I sent it" handlers close over
+  // `counter` and only call it on a later click, after this const has initialized.
   const counter = (() => {
     const meta = document.querySelector('meta[name="rtw-counter"]'), url = meta && meta.content.trim();
     const out = document.getElementById('sentCount');
@@ -1575,6 +1730,8 @@ See before-and-after drawings of nine spots and send a two-minute comment:
     if (url) fetch(url).then(r => r.json()).then(d => render(d.count || 0)).catch(() => {});
     return { bump(plan) { if (!url) return; fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan }) }).then(r => r.json()).then(d => render(d.count || 0)).catch(() => {}); } };
   })();
+  // Two plan tabs. Either arrow moves to the other one; with only two tabs,
+  // direction doesn't matter and the index wraps.
   const ptabs = Array.from(document.querySelectorAll('.plan-tabs [role=tab]'));
   function selectPlan(t) {
     ptabs.forEach(b => { const on = b === t; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; document.getElementById(b.getAttribute('aria-controls')).hidden = !on; });
